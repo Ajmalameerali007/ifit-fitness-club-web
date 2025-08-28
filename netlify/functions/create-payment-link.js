@@ -1,4 +1,8 @@
 // netlify/functions/create-payment-link.js
+// Final production script using Node's https (no external dependencies)
+
+const https = require("https");
+const { URL } = require("url");
 
 const BASES = {
   sandbox: "https://sandbox.dev.business.mamopay.com/manage_api/v1",
@@ -21,6 +25,40 @@ const toMinor = (v) => {
   return null;
 };
 
+function postJSON(urlStr, headers, payload, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const options = {
+      method: "POST",
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      headers: { "Content-Type": "application/json", ...headers },
+    };
+
+    const req = https.request(options, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        let data;
+        try {
+          data = body ? JSON.parse(body) : {};
+        } catch {
+          data = { raw: body };
+        }
+        resolve({ statusCode: res.statusCode || 500, data });
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error("Request timeout"));
+    });
+
+    req.on("error", reject);
+    req.write(JSON.stringify(payload || {}));
+    req.end();
+  });
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors() };
   if (event.httpMethod !== "POST") return { statusCode: 405, headers: cors(), body: "Method Not Allowed" };
@@ -32,22 +70,14 @@ exports.handler = async (event) => {
     }
 
     const body = JSON.parse(event.body || "{}");
-
-    const name =
-      body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
-    const rawAmount =
-      body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
-
+    const name = body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
+    const rawAmount = body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
     const amountMinor = toMinor(rawAmount);
     const currency = (body.currency || "AED").toUpperCase();
     const description = body.description || name || "Payment";
 
     if (!name || amountMinor == null) {
-      return {
-        statusCode: 400,
-        headers: cors(),
-        body: JSON.stringify({ error: "name and numeric amount are required" }),
-      };
+      return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "name and numeric amount are required" }) };
     }
 
     const base = BASES[(MAMO_ENV || "production").toLowerCase()] || BASES.production;
@@ -56,8 +86,8 @@ exports.handler = async (event) => {
       name,
       title: name,
       description,
-      amount: amountMinor,
-      amount_currency: currency,
+      amount: amountMinor,          // minor units (e.g., 249 AED -> 24900)
+      amount_currency: currency,    // "AED"
       payment_methods: ["card", "wallet"],
       is_widget: true,
       platform: "api",
@@ -69,21 +99,10 @@ exports.handler = async (event) => {
         : {}),
     };
 
-    const resp = await fetch(`${base}/links`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${MAMO_PAY_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await resp.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    const { statusCode, data } = await postJSON(`${base}/links`, { Authorization: `Bearer ${MAMO_PAY_SECRET_KEY}` }, payload);
 
     return {
-      statusCode: resp.ok ? 200 : resp.status,
+      statusCode: statusCode,
       headers: { ...cors(), "Content-Type": "application/json" },
       body: JSON.stringify(data),
     };
