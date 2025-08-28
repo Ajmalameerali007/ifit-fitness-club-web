@@ -1,4 +1,4 @@
-// Production-ready Mamo Payment Link function (no external deps)
+// netlify/functions/create-payment-link.js
 
 const BASES = {
   sandbox: "https://sandbox.dev.business.mamopay.com/manage_api/v1",
@@ -11,12 +11,11 @@ const cors = () => ({
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
 });
 
-const parseAmountToMinor = (value) => {
-  if (value == null) return null;
-  if (typeof value === "number") return Math.round(value * 100);
-  if (typeof value === "string") {
-    const cleaned = value.replace(/[^0-9.,-]/g, "").replace(/,/g, "");
-    const n = parseFloat(cleaned);
+const toMinor = (v) => {
+  if (v == null) return null;
+  if (typeof v === "number") return Math.round(v * 100);
+  if (typeof v === "string") {
+    const n = parseFloat(v.replace(/[^0-9.,-]/g, "").replace(/,/g, ""));
     return Number.isFinite(n) ? Math.round(n * 100) : null;
   }
   return null;
@@ -33,12 +32,13 @@ exports.handler = async (event) => {
     }
 
     const body = JSON.parse(event.body || "{}");
+
     const name =
       body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
     const rawAmount =
       body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
 
-    const amountMinor = parseAmountToMinor(rawAmount);
+    const amountMinor = toMinor(rawAmount);
     const currency = (body.currency || "AED").toUpperCase();
     const description = body.description || name || "Payment";
 
@@ -79,18 +79,11 @@ exports.handler = async (event) => {
     });
 
     const text = await resp.text();
-    let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    if (!resp.ok) {
-      return {
-        statusCode: resp.status,
-        headers: { ...cors(), "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      };
-    }
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
 
     return {
-      statusCode: 200,
+      statusCode: resp.ok ? 200 : resp.status,
       headers: { ...cors(), "Content-Type": "application/json" },
       body: JSON.stringify(data),
     };
