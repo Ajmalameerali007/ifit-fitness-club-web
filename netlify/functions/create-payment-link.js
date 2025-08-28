@@ -9,10 +9,16 @@ const cors = () => ({
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
 });
 
-const toMinor = (x) => {
-  const n = typeof x === "number" ? x : Number(x);
-  if (Number.isNaN(n)) return null;
-  return Math.round(n * 100);
+const parseAmountToMinor = (value) => {
+  if (value == null) return null;
+  if (typeof value === "number") return Math.round(value * 100);
+  if (typeof value === "string") {
+    // Accept formats like "249", "249.00", "AED 249", "249 AED", "2,499.00"
+    const cleaned = value.replace(/[^0-9.,-]/g, "").replace(/,/g, "");
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? Math.round(n * 100) : null;
+  }
+  return null;
 };
 
 exports.handler = async (event) => {
@@ -26,13 +32,26 @@ exports.handler = async (event) => {
     }
 
     const body = JSON.parse(event.body || "{}");
-    const name = body.name || body.title;
-    const amountMinor = toMinor(body.amount);
-    const currency = body.currency || "AED";
+
+    // Accept common field names from the UI
+    const name =
+      body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
+    const rawAmount =
+      body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
+
+    const amountMinor = parseAmountToMinor(rawAmount);
+    const currency = (body.currency || "AED").toUpperCase();
     const description = body.description || name || "Payment";
 
     if (!name || amountMinor == null) {
-      return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "name and numeric amount are required" }) };
+      return {
+        statusCode: 400,
+        headers: cors(),
+        body: JSON.stringify({
+          error: "name and numeric amount are required",
+          received: { name, rawAmount },
+        }),
+      };
     }
 
     const base = BASES[(MAMO_ENV || "production").toLowerCase()] || BASES.production;
@@ -41,8 +60,8 @@ exports.handler = async (event) => {
       name,
       title: name,
       description,
-      amount: amountMinor,           // e.g. 149 AED -> 14900
-      amount_currency: currency,     // AED
+      amount: amountMinor,           // minor units
+      amount_currency: currency,     // e.g. AED
       payment_methods: ["card", "wallet"],
       is_widget: true,
       platform: "api",
@@ -65,11 +84,23 @@ exports.handler = async (event) => {
 
     const data = await resp.json();
     if (!resp.ok) {
-      return { statusCode: resp.status, headers: { ...cors(), "Content-Type": "application/json" }, body: JSON.stringify(data) };
+      return {
+        statusCode: resp.status,
+        headers: { ...cors(), "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      };
     }
 
-    return { statusCode: 200, headers: { ...cors(), "Content-Type": "application/json" }, body: JSON.stringify(data) };
+    return {
+      statusCode: 200,
+      headers: { ...cors(), "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    };
   } catch (err) {
-    return { statusCode: 500, headers: { ...cors(), "Content-Type": "application/json" }, body: JSON.stringify({ error: err.message }) };
+    return {
+      statusCode: 500,
+      headers: { ...cors(), "Content-Type": "application/json" },
+      body: JSON.stringify({ error: err.message }),
+    };
   }
 };
