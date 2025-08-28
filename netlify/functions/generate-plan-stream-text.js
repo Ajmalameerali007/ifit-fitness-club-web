@@ -1,4 +1,4 @@
-import axios from "axios";
+const axios = require("axios");
 
 const toNumber = (v, f) => {
   if (typeof v === "number" && !Number.isNaN(v)) return v;
@@ -9,11 +9,15 @@ const toNumber = (v, f) => {
   return f;
 };
 
-export async function handler(event) {
-  if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
+exports.handler = async (event) => {
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers: { "Content-Type": "application/json" }, body: "Method Not Allowed" };
+  }
 
   const { GEMINI_API_KEY } = process.env;
-  if (!GEMINI_API_KEY) return { statusCode: 500, body: JSON.stringify({ error: "Missing GEMINI_API_KEY" }) };
+  if (!GEMINI_API_KEY) {
+    return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "Missing GEMINI_API_KEY" }) };
+  }
 
   try {
     const body = JSON.parse(event.body || "{}");
@@ -24,7 +28,8 @@ export async function handler(event) {
     const session_mins = toNumber(body.session_mins, 45);
     const notes        = body.notes || "";
 
-    const prompt = `You are IFIT's most capable, humanized fitness coach. Create a realistic, safe, motivating plan.
+    const prompt =
+`You are IFIT's most capable, humanized fitness coach. Create a realistic, safe, motivating plan.
 
 USER PROFILE
 - Goal: ${goal}
@@ -59,9 +64,9 @@ INSTRUCTIONS
     );
 
     const text = resp?.data?.candidates?.[0]?.content?.parts?.[0]?.text || "No plan generated";
-    return { statusCode: 200, body: JSON.stringify({ plan: text }) };
+    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: text }) };
   } catch (err) {
     const msg = err?.response?.data?.error?.message || err?.message || "Failed to generate plan";
-    return { statusCode: 500, body: JSON.stringify({ error: msg }) };
+    return { statusCode: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: msg }) };
   }
-}
+};
