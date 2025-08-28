@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDownIcon } from './icons';
 import ShineButton from './ShineButton';
 import BackgroundAnimation from './BackgroundAnimation';
-import { startCheckout } from './payments';
+import { startCheckout } from './payment';  // ✅ FIXED: singular file name
 
 export type Plan = {
   name: string;
@@ -76,11 +76,7 @@ const PlanCard: React.FC<{ plan: Plan; onSelect: () => void; isFeatured?: boolea
   );
 };
 
-type MembershipProps = {
-  onSelectPlan?: (plan: Plan) => void; // optional, falls back to direct checkout
-};
-
-const Membership: React.FC<MembershipProps> = ({ onSelectPlan }) => {
+const Membership: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState(categories[0]);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -142,10 +138,7 @@ const Membership: React.FC<MembershipProps> = ({ onSelectPlan }) => {
               <PlanCard
                 key={plan.name}
                 plan={plan as Plan}
-                onSelect={() => {
-                  if (onSelectPlan) onSelectPlan(plan as Plan);
-                  else startCheckout((plan as Plan).name, (plan as Plan).price);
-                }}
+                onSelect={() => startCheckout((plan as Plan).name, (plan as Plan).price)}
               />
             ))}
           </motion.div>
