@@ -13,7 +13,7 @@ const parseAmountToMinor = (value) => {
   if (value == null) return null;
   if (typeof value === "number") return Math.round(value * 100);
   if (typeof value === "string") {
-    // Accept formats like "249", "249.00", "AED 249", "249 AED", "2,499.00"
+    // Accept "249", "249.00", "AED 249", "249 AED", "2,499.00"
     const cleaned = value.replace(/[^0-9.,-]/g, "").replace(/,/g, "");
     const n = parseFloat(cleaned);
     return Number.isFinite(n) ? Math.round(n * 100) : null;
@@ -33,11 +33,9 @@ exports.handler = async (event) => {
 
     const body = JSON.parse(event.body || "{}");
 
-    // Accept common field names from the UI
-    const name =
-      body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
-    const rawAmount =
-      body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
+    // Accept flexible field names
+    const name = body.name ?? body.title ?? body.plan ?? body.planName ?? body.productName;
+    const rawAmount = body.amount ?? body.price ?? body.planPrice ?? body.total ?? body.value;
 
     const amountMinor = parseAmountToMinor(rawAmount);
     const currency = (body.currency || "AED").toUpperCase();
@@ -47,60 +45,8 @@ exports.handler = async (event) => {
       return {
         statusCode: 400,
         headers: cors(),
-        body: JSON.stringify({
-          error: "name and numeric amount are required",
-          received: { name, rawAmount },
-        }),
+        body: JSON.stringify({ error: "name and numeric amount are required", received: { name, rawAmount } }),
       };
     }
 
     const base = BASES[(MAMO_ENV || "production").toLowerCase()] || BASES.production;
-
-    const payload = {
-      name,
-      title: name,
-      description,
-      amount: amountMinor,           // minor units
-      amount_currency: currency,     // e.g. AED
-      payment_methods: ["card", "wallet"],
-      is_widget: true,
-      platform: "api",
-      ...(FRONTEND_URL
-        ? {
-            return_url: `${FRONTEND_URL}/payment/success`,
-            failure_return_url: `${FRONTEND_URL}/payment/failed`,
-          }
-        : {}),
-    };
-
-    const resp = await fetch(`${base}/links`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${MAMO_PAY_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await resp.json();
-    if (!resp.ok) {
-      return {
-        statusCode: resp.status,
-        headers: { ...cors(), "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      };
-    }
-
-    return {
-      statusCode: 200,
-      headers: { ...cors(), "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers: { ...cors(), "Content-Type": "application/json" },
-      body: JSON.stringify({ error: err.message }),
-    };
-  }
-};
